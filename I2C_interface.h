@@ -43,6 +43,6 @@ ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived, u16 Copy_u16Si
  * Inputs: 1- I2Cx: Pointer to I2Cx peripheral to be used in communication
  * 		   2- data: Data to be written to device
  */
-ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8 Copy_u8TxData);
+ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8* Copy_u8TransmittedData, u16 Copy_u16Size);
 
 #endif /* I2C_INTERFACE_H_ */

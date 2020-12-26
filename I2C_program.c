@@ -156,23 +156,37 @@ ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived, u16 Copy_u16Si
 	return OK;
 }
 
-ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8 Copy_u8TransmittedData){
+ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8* Copy_u8TransmittedData, u16 Copy_u16Size){
 	volatile u32 Local_u32Wait;
 
+	/*Clear ADDR*/
+	CLR_BIT(I2Cx->SR1, I2C_SR1_ADDR);
 
+	while(Copy_u16Size > 0U){
+		//Wait until transmission is complete:
+		Local_u32Wait = I2C_TIMEOUT;
+		while(!GET_BIT(I2Cx->SR1, I2C_SR1_TXE) && --Local_u32Wait);
+		if(!Local_u32Wait) return TIME_OUT;
 
-	//Wait until transmission is complete:
-	Local_u32Wait = I2C_TIMEOUT;
-	while(!GET_BIT(I2Cx->SR1, I2C_SR1_TXE) && --Local_u32Wait);
-	if(!Local_u32Wait) return TIME_OUT;
+		// Write the data on the bus
+		I2Cx->DR = (*Copy_u8TransmittedData++);
+		--Copy_u16Size;
 
-	// Write the data on the bus
-	I2Cx->DR = Copy_u8TransmittedData;
+		if(GET_BIT(I2Cx->SR1, I2C_SR1_BTF) && (Copy_u16Size != 0U)){
+			// Write the data on the bus
+			I2Cx->DR = (*Copy_u8TransmittedData++);
+			--Copy_u16Size;
+		}
 
-	//Wait until transmission is complete:
-	Local_u32Wait = I2C_TIMEOUT;
-	while(!I2C_CheckEv(I2Cx, I2C_MASTER_BYTE_TRANSMITTED) && --Local_u32Wait);
-	if(!Local_u32Wait) return TIME_OUT;
+		//wait till BTF is set
+		Local_u32Wait = I2C_TIMEOUT;
+		while(!GET_BIT(I2Cx->SR1, I2C_SR1_BTF) && --Local_u32Wait);
+		if(!Local_u32Wait) return TIME_OUT;
+	}
+
+	// Generate the stop condition
+	CLR_BIT(I2Cx->CR1, I2C_CR1_START);
+	SET_BIT(I2Cx->CR1, I2C_CR1_STOP);
 
 	return OK;
 }
