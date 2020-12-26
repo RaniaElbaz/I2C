@@ -8,12 +8,14 @@
 #ifndef I2C_CONFIG_H_
 #define I2C_CONFIG_H_
 
-/*
- * choose clk speed:
- * must be >= 100k
- * and < 400k
+
+/*I2C Clock Values:
+1- I2C_CLOCK_STANDARD          I2C Standard speed
+2- I2C_CLOCK_FAST_MODE         I2C Fast mode speed
+3- I2C_CLOCK_FAST_MODE_PLUS    I2C Fast mode plus speed
+4- I2C_CLOCK_HIGH_SPEED        I2C High speed
  */
-#define CLK_SPEED	100000
+#define CLK_SPEED	I2C_CLOCK_FAST_MODE
 
 /*choose clk freq:
  * 1- FREQ_50MHZ

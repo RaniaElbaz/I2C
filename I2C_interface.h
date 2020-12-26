@@ -8,16 +8,23 @@
 #ifndef I2C_INTERFACE_H_
 #define I2C_INTERFACE_H_
 
-/*I2C handles*/
-#define I2C1	((I2C_t *) I2C1_BASE)
+/*I2C handles I2Cx*/
+#define I2C1	((I2C_t *) I2C1_BASEADD)
+
+/*I2C Clock Values*/
+#define I2C_CLOCK_STANDARD         (u32)100000  /* I2C Standard speed */
+#define I2C_CLOCK_FAST_MODE        (u32)400000  /* I2C Fast mode speed */
+#define I2C_CLOCK_FAST_MODE_PLUS   (u32)1000000 /* I2C Fast mode plus speed */
+#define I2C_CLOCK_HIGH_SPEED       (u32)3400000 /* I2C High speed */
 
 /* Transmission Direction*/
-#define I2C_Tx_Direction	1
-#define I2C_Rx_Direction	0
+#define I2C_Tx_Direction	1 //transmit
+#define I2C_Rx_Direction	0 //receive
 
 /*initializes I2C1 only
- * precondition: rcc and gpio initialized*/
-void I2C1_voidInit(void);
+ * precondition: rcc and gpio initialized
+ */
+void I2C1_voidInit(u32 Copy_u32ClkSpeed);
 
 /*
  * Description: Send Start Condition
@@ -25,16 +32,11 @@ void I2C1_voidInit(void);
 ErrorStatus_t I2C_StartTransmission(I2C_t* I2Cx, u8 transmissionDirection,  u8 slaveAddress);
 
 /*
- * Description: Send Stop Condition
- */
-void I2C_StopTransmission(I2C_t* I2Cx, u8 transmissionDirection,  u8 slaveAddress);
-
-/*
  * Description:  Reads single byte from device
  * args:    I2Cx: Pointer to I2Cx peripheral to be used in communication
  * outputs: read data from i2c
  */
-ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived);
+ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived, u16 Copy_u16Size);
 
 /*
  * Description:  Writes single byte to device
@@ -42,24 +44,5 @@ ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived);
  * 		   2- data: Data to be written to device
  */
 ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8 Copy_u8TxData);
-
-/*
- * Description:  Reads multiple bytes from device
- * args:   1- I2Cx: Pointer to I2Cx peripheral to be used in communication
- *		   2- device_address: 7-bit, left aligned device address used for communication
- *		   3- register_address: Register address from where read operation will start
- * 		   4- data: Pointer to variable where data will be stored from read operation
- *		   5- count: Number of elements to read from device
- *outputs: i2c error state: TM_I2C_Result_t
- */
-ErrorStatus_t I2C_ReadMulti(I2C_t* I2Cx, u8 device_address, u8 register_address, u8* data, u16 count);
-
-/*
- * Description:  Checks if device is connected to I2C port and ready to use
- * inputs: 1- I2Cx: Pointer to I2Cx peripheral to be used in communication
- * 		   2- device_address: 7-bit, left aligned device address used for communication
- * outputs: i2c error state: TM_I2C_Result_t
- */
-ErrorStatus_t I2C_IsConnected(I2C_t* I2Cx, u8 address);
 
 #endif /* I2C_INTERFACE_H_ */

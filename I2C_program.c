@@ -13,31 +13,26 @@
 #include "I2C_private.h"
 #include "I2C_interface.h"
 #include "I2C_config.h"
-#include "I2C_register.h"
 
-//Global structures as handles for peripheral devices:
 I2C_Init_t i2c;
 
-void I2C1_voidInit(void){
+void I2C1_voidInit(u32 Copy_u32ClkSpeed){
 	MRCC_voidEnablePeripheralClock(RCC_APB1,RCC_APB1_I2C1);
 
 	// Setup the I2C BUS properties through the defined "i2c" structure:
-	i2c.I2C_ClkSpeed = CLK_SPEED;    //Bus clock speed
+	i2c.I2C_ClkSpeed = Copy_u32ClkSpeed;    //Bus clock speed
 	i2c.I2C_Mode = I2C_Mode_I2C;
 	i2c.I2C_DutyCycle = I2C_DUTYCYCLE_2;
 	// Setup I2C BUS master properties:
-	i2c.I2C_OwnAddress1 = 0x15;
+	i2c.I2C_OwnAddress1 = 0x00;
 	i2c.I2C_Ack = I2C_ACK_ENABLE;
 	i2c.I2C_AckAddress = I2C_ACK_ADDRESS_7BIT;
 
 	// Finally initialize the I2C1 unit using the "i2c" structure.
 	I2C_voidInit(I2C1, &i2c);
-
-	// Enable the I2C1 module:
-	SET_BIT(I2C1_CR1, I2C_CR1_PE);
 }
 
-ErrorStatus_t I2C_StartTransmission(I2C_t* I2Cx,u8 Copy_u8TxDirection, u8 Copy_u8SlaveAddress){
+ErrorStatus_t I2C_StartTransmission(I2C_t* I2Cx,u8 Copy_u8Direction, u8 Copy_u8SlaveAddress){
 	volatile u32 Local_u32Wait;
 
 	// Wait until I2C module is idle:
@@ -49,84 +44,122 @@ ErrorStatus_t I2C_StartTransmission(I2C_t* I2Cx,u8 Copy_u8TxDirection, u8 Copy_u
 
 	// Generate the start condition
 	SET_BIT(I2Cx->CR1,I2C_CR1_START);
-	Local_u32Wait = I2C_TIMEOUT;
-	while(!GET_BIT(I2Cx->CR1, I2C_CR1_START) && --Local_u32Wait);
-	if(!Local_u32Wait){
-		return TIME_OUT;
-	}
 
 	//Master Mode
 	Local_u32Wait = I2C_TIMEOUT;
-	while(!I2C_CheckEv(I2Cx, I2C_MASTER_MODE) && --Local_u32Wait);
+	while((I2C_CheckEv(I2Cx, I2C_MASTER_MODE) == NOK) && --Local_u32Wait);
 	if(!Local_u32Wait){
 		return TIME_OUT;
 	}
 
 	//Send the address of the slave to be contacted:
-	Local_u32Wait = I2C_TIMEOUT;
-	if (Copy_u8TxDirection != I2C_Tx_Direction){
-		/*set i2C for receive*/
-		while(!I2C_CheckEv(I2Cx, I2C_MASTER_TRANSMITTER) && --Local_u32Wait);
-		if(!Local_u32Wait){
-			return TIME_OUT;
-		}
-		/* Set the address bit0 for read */
-		SET_BIT(Copy_u8SlaveAddress, I2C_OAR1_ADD0);
-	}
-	else if (Copy_u8TxDirection != I2C_Rx_Direction){
-		/*set I2C for transmit*/
-		while(!I2C_CheckEv(I2Cx, I2C_MASTER_RECEIVER) && --Local_u32Wait);
-		if(!Local_u32Wait){
-			return TIME_OUT;
-		}
-		/* Reset the address bit0 for write */
-		CLR_BIT(Copy_u8SlaveAddress,I2C_OAR1_ADD0);
-	}
-	else{
+	I2C_SendSlaveAddress(I2Cx, Copy_u8SlaveAddress, Copy_u8Direction);
+
+	return OK;
+}
+
+ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived, u16 Copy_u16Size){
+	volatile u32 Local_u32Wait;
+
+	if(Copy_u16Size <= 0U){
 		return NOK;
 	}
+	else if(Copy_u16Size == 1U){
+		/* Disable Acknowledge */
+		CLR_BIT(I2Cx->CR1, I2C_CR1_ACK);
+		/*Clear ADDR*/
+		CLR_BIT(I2Cx->SR1, I2C_SR1_ADDR);
+		// Generate the stop condition
+		CLR_BIT(I2Cx->CR1, I2C_CR1_START);
+		SET_BIT(I2Cx->CR1, I2C_CR1_STOP);
+	}
+	else if(Copy_u16Size == 2U){
+		/*Enable Pos */
+		SET_BIT(I2Cx->CR1, I2C_CR1_POS);
+		/*Enable Acknowledge */
+		SET_BIT(I2Cx->CR1, I2C_CR1_ACK);
+		/*wait for ADDR to be set*/
+		Local_u32Wait = I2C_TIMEOUT;
+		while(!GET_BIT(I2Cx->SR1, I2C_SR1_ADDR) && --Local_u32Wait);
+		if(!Local_u32Wait)	return TIME_OUT;
+		/*Clear ADDR*/
+		CLR_BIT(I2Cx->SR1, I2C_SR1_ADDR);
+		/* Disable Acknowledge */
+		CLR_BIT(I2Cx->CR1, I2C_CR1_ACK);
+	}
+	else{
+		/* Enable Acknowledge */
+		SET_BIT(I2Cx->CR1, I2C_CR1_ACK);
+		/*Clear ADDR*/
+		CLR_BIT(I2Cx->SR1, I2C_SR1_ADDR);
+	}
 
-	//Copy address into DR to start transmission
-	I2Cx->DR = Copy_u8SlaveAddress;
+	while(Copy_u16Size > 0U){
+		if(Copy_u16Size <= 3U){
+			if(Copy_u16Size == 1U){
+				//Wait until RXNE flag is set
+				Local_u32Wait = I2C_TIMEOUT;
+				while (!GET_BIT(I2Cx->SR1,I2C_SR1_RXNE) && --Local_u32Wait);
+				if (!Local_u32Wait) return TIME_OUT;
 
-	CLR_BIT(I2Cx->CR1,I2C_CR1_START);
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+			}
+			else if(Copy_u16Size == 2U){
+				//Wait until BTF flag is set
+				Local_u32Wait = I2C_TIMEOUT;
+				while (!GET_BIT(I2Cx->SR1,I2C_SR1_BTF) && --Local_u32Wait);
+				if (!Local_u32Wait) return TIME_OUT;
+				// Generate the stop condition
+				SET_BIT(I2Cx->CR1, I2C_CR1_STOP);
+
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+			}
+			else{
+				//Wait until BTF flag is set
+				Local_u32Wait = I2C_TIMEOUT;
+				while (!GET_BIT(I2Cx->SR1,I2C_SR1_BTF) && --Local_u32Wait);
+				if (!Local_u32Wait) return TIME_OUT;
+				/* Disable Acknowledge */
+				CLR_BIT(I2Cx->CR1, I2C_CR1_ACK);
+
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+
+				//Wait until BTF flag is set
+				Local_u32Wait = I2C_TIMEOUT;
+				while (!GET_BIT(I2Cx->SR1,I2C_SR1_BTF) && --Local_u32Wait);
+				if (!Local_u32Wait) return TIME_OUT;
+				// Generate the stop condition
+				SET_BIT(I2Cx->CR1, I2C_CR1_STOP);
+
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+				(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+				--Copy_u16Size;
+			}
+		}
+		else{
+			//Wait until RXNE flag is set
+			Local_u32Wait = I2C_TIMEOUT;
+			while (!GET_BIT(I2Cx->SR1,I2C_SR1_RXNE) && --Local_u32Wait);
+			if (!Local_u32Wait) return TIME_OUT;
+
+			(*Copy_pu8DataReceived++) = (u8)I2Cx->DR; // Receive byte
+			--Copy_u16Size;
+		}
+	}
 
 	return OK;
 }
 
-ErrorStatus_t I2C_StopTransmission(I2C_t* I2Cx,u8 Copy_u8TxDirection){
+ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8 Copy_u8TransmittedData){
 	volatile u32 Local_u32Wait;
 
-	// Generate the stop condition
-	SET_BIT(I2Cx->CR1, I2C_CR1_STOP);
 
-	//Wait until transmission is complete:
-	Local_u32Wait = I2C_TIMEOUT;
-	while(!GET_BIT(I2Cx->CR1, I2C_CR1_STOP) && --Local_u32Wait);
-	if(!Local_u32Wait) return TIME_OUT;
-
-	CLR_BIT(I2Cx->CR1, I2C_CR1_STOP);
-
-	return OK;
-}
-
-ErrorStatus_t I2C_ReadData(I2C_t* I2Cx, u8* Copy_pu8DataReceived){
-	volatile u32 Local_u32Wait;
-
-	// Wait for RxNE flag
-	Local_u32Wait = I2C_TIMEOUT;
-	while (!GET_BIT(I2Cx->SR1,I2C_SR1_RXNE) && --Local_u32Wait);
-	if (!Local_u32Wait) return TIME_OUT;
-
-	*Copy_pu8DataReceived++ = (u8)I2Cx->DR; // Receive byte
-
-
-
-	return OK;
-}
-
-ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8* Copy_u8TxData){
-	volatile u32 Local_u32Wait;
 
 	//Wait until transmission is complete:
 	Local_u32Wait = I2C_TIMEOUT;
@@ -134,7 +167,7 @@ ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8* Copy_u8TxData){
 	if(!Local_u32Wait) return TIME_OUT;
 
 	// Write the data on the bus
-	I2Cx->DR = Copy_u8TxData;
+	I2Cx->DR = Copy_u8TransmittedData;
 
 	//Wait until transmission is complete:
 	Local_u32Wait = I2C_TIMEOUT;
@@ -145,10 +178,9 @@ ErrorStatus_t I2C_WriteData(I2C_t* I2Cx, u8* Copy_u8TxData){
 }
 
 static void I2C_voidInit(I2C_t* I2Cx, I2C_Init_t* Copy_I2C_InitStruct){
-
 	u16 Local_u16TmpReg = 0, result;
 	u32 Local_u32Clk = CLK_FREQ * 1000000;
-
+	/***************************CR2 config*********************************/
 	/* Get the I2Cx CR2 value */
 	Local_u16TmpReg = I2Cx->CR2;
 	/* Clear frequency FREQ[5:0] bits */
@@ -158,13 +190,13 @@ static void I2C_voidInit(I2C_t* I2Cx, I2C_Init_t* Copy_I2C_InitStruct){
 	/* Write to I2Cx CR2 */
 	I2Cx->CR2 = Local_u16TmpReg;
 
+	/***************************CCR config*********************************/
 	/* Disable the selected I2C peripheral to configure TRISE */
 	CLR_BIT(I2Cx->CR1,I2C_CR1_PE);
 	/* Reset tmpreg value */
 	Local_u16TmpReg = 0;
-
 	/* Configure speed in standard mode */
-	if (Copy_I2C_InitStruct->I2C_ClkSpeed <= 100000) {
+	if (Copy_I2C_InitStruct->I2C_ClkSpeed <= 100000){
 		/* Standard mode speed calculate */
 		result = (u16)(Local_u32Clk / (Copy_I2C_InitStruct->I2C_ClkSpeed << 1));
 		/* Test if CCR value is under 0x4*/
@@ -177,7 +209,7 @@ static void I2C_voidInit(I2C_t* I2Cx, I2C_Init_t* Copy_I2C_InitStruct){
 		/* Set Maximum Rise Time for standard mode */
 		I2Cx->TRISE = CLK_FREQ + 1;
 	}
-	else{
+	else{ /*(Copy_I2C_InitStruct->I2C_ClkSpeed <= 400000)*/
 		if (Copy_I2C_InitStruct->I2C_DutyCycle == I2C_DUTYCYCLE_2){
 			/* Fast mode speed calculate: Tlow/Thigh = 2 */
 			result = (u16)(Local_u32Clk / (Copy_I2C_InitStruct->I2C_ClkSpeed * 3));
@@ -199,11 +231,12 @@ static void I2C_voidInit(I2C_t* I2Cx, I2C_Init_t* Copy_I2C_InitStruct){
 		/* Set Maximum Rise Time for fast mode */
 		I2Cx->TRISE = (u16)(((CLK_FREQ * (u16)300) / (u16)1000) + (u16)1);
 	}
-
 	/* Write to I2Cx CCR */
 	I2Cx->CCR = Local_u16TmpReg;
 	/* Enable the selected I2C peripheral */
 	SET_BIT(I2Cx->CR1,I2C_CR1_PE);
+
+	/***************************CR1 config*********************************/
 	/* Get the I2Cx CR1 value */
 	Local_u16TmpReg = I2Cx->CR1;
 	/* Clear ACK, SMBTYPE and  SMBUS bits */
@@ -215,8 +248,13 @@ static void I2C_voidInit(I2C_t* I2Cx, I2C_Init_t* Copy_I2C_InitStruct){
 	/*write to I2Cx CR1*/
 	I2Cx->CR1 = Local_u16TmpReg;
 
+	/***************************OAR1 config*********************************/
 	/* Set I2Cx Own Address1 and acknowledged address */
-	I2C1_OAR1 = (Copy_I2C_InitStruct->I2C_AckAddress | Copy_I2C_InitStruct->I2C_OwnAddress1);
+	I2Cx->OAR1 = (Copy_I2C_InitStruct->I2C_AckAddress | Copy_I2C_InitStruct->I2C_OwnAddress1);
+
+	// Enable the I2C1 module:
+	SET_BIT(I2Cx->CR1, I2C_CR1_PE);
+
 }
 
 static ErrorStatus_t I2C_CheckEv(I2C_t* I2Cx, u32 Copy_I2C_Event){
@@ -238,4 +276,18 @@ static ErrorStatus_t I2C_CheckEv(I2C_t* I2Cx, u32 Copy_I2C_Event){
 	else{
 		return NOK;
 	}
+}
+
+static void I2C_SendSlaveAddress(I2C_t* I2Cx, u8 Copy_u8Address, u8 Copy_u8Direction){
+	if (Copy_u8Direction != I2C_Tx_Direction){
+		/* Set the address bit0 for read */
+		SET_BIT(Copy_u8Address, I2C_OAR1_ADD0);
+	}
+	else if(Copy_u8Direction != I2C_Rx_Direction){
+		/* Reset the address bit0 for write */
+		CLR_BIT(Copy_u8Address,I2C_OAR1_ADD0);
+	}
+
+	//Copy address into DR to start transmission
+	I2Cx->DR = Copy_u8Address;
 }
